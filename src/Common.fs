@@ -51,20 +51,23 @@ module Common =
                     if format.IsSome then yield "format", format.Value.Name
                 ] |> Map.ofList<string,string>
 
-    let get<'t> (baseUri:string) (apiParams:ApiParams) (serializer:'t -> Map<string,string>) (commandParams:'t) =
+    type IParameterizedCommand =
+        abstract member ToQueryParameters : unit -> Map<string,string>
+
+    let get<'t when 't :> IParameterizedCommand> (baseUri:string) (apiParams:ApiParams) (commandParams:'t) =
         let uriBuilder = System.UriBuilder (baseUri)
         uriBuilder.Query <- 
             let apiParamMap = apiParams.ToQueryParameters ()
-            let cmdParamMap = commandParams |> serializer
+            let cmdParamMap = commandParams.ToQueryParameters ()
             Map.fold (fun acc key value -> Map.add key value acc) apiParamMap cmdParamMap
             |> Seq.map (fun kvp -> sprintf "%s=%s" kvp.Key kvp.Value)
             |> String.concat "&"
         httpGet http.Value uriBuilder.Uri.AbsoluteUri
 
-    let post<'t> (baseUri:string) (apiParams:ApiParams) (serializer:'t -> Map<string,string>) (commandParams:'t) =
+    let post<'t when 't :> IParameterizedCommand> (baseUri:string) (apiParams:ApiParams) (commandParams:'t) =
         let uriBuilder = System.UriBuilder (baseUri)
         let apiParamMap = apiParams.ToQueryParameters ()
-        let cmdParamMap = commandParams |> serializer
+        let cmdParamMap = commandParams.ToQueryParameters ()
         Map.fold (fun acc key value -> Map.add key value acc) apiParamMap cmdParamMap
         |> Seq.map (fun kvp -> System.Collections.Generic.KeyValuePair<_,_>(kvp.Key, kvp.Value))
         |> httpPost http.Value uriBuilder.Uri.AbsoluteUri

@@ -7,10 +7,17 @@ open Chiron.Operators
 open Chiron.Parsing
 
 module Dns =
+    type ICommandParam =
+        abstract member ApiCommand : string
+
     type ListRecords = 
         | ListRecords
     with
-        static member ApiCommand = "dns-list_records"
+        interface ICommandParam with
+            member x.ApiCommand = "dns-list_records"
+        interface IParameterizedCommand with
+            member x.ToQueryParameters () =
+                Map.empty<string,string>
 
     type DnsValue = 
         | A of Name:string * Value:string
@@ -43,34 +50,36 @@ module Dns =
     type AddRecord = 
         | AddRecord of Value:DnsValue * Comment:string option
     with
-        static member ApiCommand = "dns-add_record"
-        member x.ToQueryParameters () =
-            match x with
-            | AddRecord (record, comment) ->
-                [
-                    match record with
-                    | A (name, value)
-                    | MX (name, value)
-                    | NS (name, value)
-                    | CNAME (name, value)
-                    | PTR (name, value)
-                    | NAPTR (name, value)
-                    | TXT (name, value)
-                    | SRV (name, value)
-                    | SPF (name, value)
-                    | AAAA (name, value)
-                    | A6 (name, value) ->
-                        yield "record", name
-                        yield "type", record.TypeCode
-                        yield "value", value
-                    | UnknownType (name, value, typeCode) ->
-                        yield "record", name
-                        yield "type", typeCode
-                        yield "value", value
-                    match comment with
-                    | Some c -> yield "comment", c
-                    | None -> ()
-                ] |> Map.ofList<string,string>
+        interface IParameterizedCommand with
+            member x.ToQueryParameters () =
+                match x with
+                | AddRecord (record, comment) ->
+                    [
+                        match record with
+                        | A (name, value)
+                        | MX (name, value)
+                        | NS (name, value)
+                        | CNAME (name, value)
+                        | PTR (name, value)
+                        | NAPTR (name, value)
+                        | TXT (name, value)
+                        | SRV (name, value)
+                        | SPF (name, value)
+                        | AAAA (name, value)
+                        | A6 (name, value) ->
+                            yield "record", name
+                            yield "type", record.TypeCode
+                            yield "value", value
+                        | UnknownType (name, value, typeCode) ->
+                            yield "record", name
+                            yield "type", typeCode
+                            yield "value", value
+                        match comment with
+                        | Some c -> yield "comment", c
+                        | None -> ()
+                    ] |> Map.ofList<string,string>
+        interface ICommandParam with
+            member x.ApiCommand = "dns-add_record"
 
     type DnsRecord = {
         AccountId : int
@@ -150,14 +159,16 @@ module Dns =
 
     let listRecords key = 
         async {
-            let apiParams = ApiParams(key, ListRecords.ApiCommand, None, Some(Json))
-            let! dnsRecords = get DefaultApiEndpoint apiParams (fun _ -> Map.empty) (ListRecords)
+            let cmd = ListRecords
+            let apiParams = ApiParams(key, (cmd :> ICommandParam).ApiCommand, None, Some(Json))
+            let! dnsRecords = get DefaultApiEndpoint apiParams cmd
             return deserializeResponse dnsRecords
         }
 
     let addRecord key record = 
         async {
-            let apiParams = ApiParams(key, AddRecord.ApiCommand, None, Some(Json))
-            let! result = post DefaultApiEndpoint apiParams (fun (r:AddRecord) -> r.ToQueryParameters()) (AddRecord(record, None))
+            let addRecord = AddRecord(record, None)
+            let apiParams = ApiParams(key, (addRecord :> ICommandParam).ApiCommand, None, Some(Json))
+            let! result = post DefaultApiEndpoint apiParams addRecord
             return deserializeSimpleResponse result
         }
